@@ -206,6 +206,15 @@ append_string(StringInfo str, struct iovec *field, const char *key, const char *
 }
 
 static void
+append_int(StringInfo str, struct iovec *field, const char *key, int value)
+{
+	char value_str[1024];
+	
+	sprintf(value_str, "%d", value);
+	append_string(str, field, key, value_str);
+}
+
+static void
 append_string3(StringInfo str, struct iovec *field, const char *key,
 			   const char *s1, const char *s2, const char *s3)
 {
@@ -219,36 +228,7 @@ append_string3(StringInfo str, struct iovec *field, const char *key,
 	field->iov_len = str->len - old_len;
 }
 
-static void
-append_fmt(StringInfo str, struct iovec *field, const char *fmt, ...)
-/* This extension allows gcc to check the format string */
-__attribute__((format(PG_PRINTF_ATTRIBUTE, 3, 4)));
-
-/* See backend/lib/stringinfo.c function appendStringInfo */
-static void
-append_fmt(StringInfo str, struct iovec *field, const char *fmt, ...)
-{
-	size_t old_len = str->len;
-	va_list args;
-	bool success;
-
-	/* appendStringInfoVA can fail due to insufficient space */
-	while (1) {
-		va_start(args, fmt);
-		success = appendStringInfoVA(str, fmt, args);
-		va_end(args);
-
-		if (success)
-			break;
-
-		/* Double the buffer size and try again. */
-		enlargeStringInfo(str, str->maxlen);
-	}
-
-	field->iov_len = str->len - old_len;
-}
-
-#define MAX_FIELDS	 23 /* NB! Keep this in sync when adding fields! */
+#define MAX_FIELDS	 25 /* NB! Keep this in sync when adding fields! */
 
 static void
 journal_emit_log(ErrorData *edata)
@@ -283,8 +263,8 @@ journal_emit_log(ErrorData *edata)
 										   ":  ",
 										   edata->message);
 
-	append_fmt(&buf, &fields[n++], "PRIORITY=%d", elevel_to_syslog(edata->elevel));
-	append_fmt(&buf, &fields[n++], "PGLEVEL=%d", edata->elevel);
+	append_int(&buf, &fields[n++], "PRIORITY=", elevel_to_syslog(edata->elevel));
+	append_int(&buf, &fields[n++], "PGLEVEL=", edata->elevel);
 
 	if (edata->sqlerrcode)
 		append_string(&buf, &fields[n++], "SQLSTATE=",
@@ -329,7 +309,7 @@ journal_emit_log(ErrorData *edata)
 	if (edata->filename)
 		append_string(&buf, &fields[n++], "CODE_FILE=", edata->filename);
 	if (edata->lineno > 0)
-		append_fmt(&buf, &fields[n++],    "CODE_LINE=%d", edata->lineno);
+		append_int(&buf, &fields[n++],    "CODE_LINE=", edata->lineno);
 	if (edata->funcname)
 		append_string(&buf, &fields[n++], "CODE_FUNCTION=", edata->funcname);
 #endif /* SD_JOURNAL_SUPPRESS_LOCATION */
